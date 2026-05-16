@@ -1,5 +1,2 @@
-# Vue 3 + Vite
-
-This template should help get you started developing with Vue 3 in Vite. The template uses Vue 3 `<script setup>` SFCs, check out the [script setup docs](https://v3.vuejs.org/api/sfc-script-setup.html#sfc-script-setup) to learn more.
-
-Learn more about IDE Support for Vue in the [Vue Docs Scaling up Guide](https://vuejs.org/guide/scaling-up/tooling.html#ide-support).
+# bag-care-management-frontend
+English: Frontend for a bag care &amp; cleaning shop management system, built with Vue 3 + Element Plus, supporting order management, customer tracking, and service scheduling. 中文：包包洗护店管理系统前端，基于 Vue 3 + Element Plus 开发，支持订单管理、客户追踪与服务排期功能。
