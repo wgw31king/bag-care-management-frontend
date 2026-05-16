@@ -65,7 +65,6 @@ function handleLogout() {
           <span class="page-title">{{ route.meta.title || '控制台' }}</span>
         </div>
         <div class="header-right">
-          <el-tag type="info" effect="plain" class="env-tag">演示环境 · 纯前端</el-tag>
           <el-dropdown trigger="click">
             <span class="user-trigger">
               <el-avatar :size="32" class="user-avatar">{{ auth.displayName.slice(0, 1) }}</el-avatar>

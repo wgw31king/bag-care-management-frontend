@@ -1,27 +1,23 @@
 <script setup>
 import { ref } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
-import { useAuthStore } from '../stores/auth'
-
-const router = useRouter()
-const route = useRoute()
-const auth = useAuthStore()
+import { ElMessage } from 'element-plus'
 
 const form = ref({
-  username: 'admin',
-  password: '123456',
+  username: '',
+  password: '',
 })
 
 const loading = ref(false)
 
 function onSubmit() {
+  if (!form.value.username || !form.value.password) {
+    ElMessage.warning('请输入账号和密码')
+    return
+  }
   loading.value = true
-  setTimeout(() => {
-    auth.login(form.value.username, form.value.password)
-    loading.value = false
-    const redirect = route.query.redirect || '/dashboard'
-    router.replace(String(redirect))
-  }, 400)
+  // TODO: 调用后端 POST /api/auth/login，成功后 auth.setSession(token, username)
+  loading.value = false
+  ElMessage.info('请接入后端登录接口后再试')
 }
 </script>
 
@@ -47,7 +43,6 @@ function onSubmit() {
           登录
         </el-button>
       </el-form>
-      <p class="hint">演示账号任意密码即可登录，数据为本地模拟。</p>
     </div>
   </div>
 </template>
@@ -118,12 +113,5 @@ function onSubmit() {
 .login-btn {
   width: 100%;
   margin-top: 8px;
-}
-
-.hint {
-  margin: 16px 0 0;
-  font-size: 12px;
-  color: #90a4ae;
-  text-align: center;
 }
 </style>

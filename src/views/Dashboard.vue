@@ -15,7 +15,7 @@ const stats = computed(() => {
   const revenue = list.reduce((s, o) => s + (Number(o.amount) || 0), 0)
   const prepay = list.reduce((s, o) => s + (Number(o.prepay) || 0), 0)
   return {
-    todayCount: todayOrders.length || list.filter((_, i) => i < 6).length,
+    todayCount: todayOrders.length,
     washingCount: washing.length,
     waitPickupCount: waitPickup.length,
     doneCount: done.length,
@@ -60,25 +60,24 @@ function formatMoney(n) {
         <el-card shadow="never" class="panel">
           <template #header>
             <span class="panel-title">营收概览</span>
-            <el-tag size="small" type="primary" effect="plain">模拟汇总</el-tag>
           </template>
           <el-row :gutter="24">
             <el-col :span="12">
               <div class="rev-block">
-                <div class="rev-label">订单金额合计（演示）</div>
+                <div class="rev-label">订单金额合计</div>
                 <div class="rev-amount primary">{{ formatMoney(stats.revenue) }}</div>
               </div>
             </el-col>
             <el-col :span="12">
               <div class="rev-block">
-                <div class="rev-label">预收款合计（演示）</div>
+                <div class="rev-label">预收款合计</div>
                 <div class="rev-amount muted">{{ formatMoney(stats.prepay) }}</div>
               </div>
             </el-col>
           </el-row>
           <el-divider />
           <p class="rev-tip">
-            接入后端后，可在此展示按日/周/月的趋势图、渠道占比、客单价等指标。当前为 Pinia 本地订单数据的简单汇总。
+            接入后端后，可在此展示按日/周/月的趋势图、渠道占比、客单价等指标。
           </p>
         </el-card>
       </el-col>
