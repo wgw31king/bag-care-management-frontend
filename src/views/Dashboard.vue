@@ -1,67 +1,85 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue'
-import request from '../api/request'
+import { ref, computed, onMounted, watch } from 'vue'
+import { useDashboardStore } from '../stores/dashboard'
+import { formatDateLabel, beijingToday } from '../utils/beijing-date'
 
+const dashboardStore = useDashboardStore()
 const loading = ref(false)
-const stats = ref({
-  todayCount: 0,
-  washingCount: 0,
-  waitPickupCount: 0,
-  doneCount: 0,
-  revenue: 0,
-  prepay: 0,
-})
+const revenueLoading = ref(false)
 
-const trendTip = ref('')
+const dateOptions = computed(() =>
+  dashboardStore.last7DayOptions().map(({ value }) => ({
+    value,
+    label: formatDateLabel(value),
+  })),
+)
 
-function todayParam() {
-  return new Date().toISOString().slice(0, 10)
-}
-
-async function loadSummary() {
+async function loadCards() {
   loading.value = true
   try {
-    const res = await request.get('/dashboard/summary', {
-      params: { date: todayParam() },
-    })
-    const data = res.data || {}
-    stats.value = {
-      todayCount: data.todayCount ?? 0,
-      washingCount: data.washingCount ?? 0,
-      waitPickupCount: data.waitPickupCount ?? 0,
-      doneCount: data.doneCount ?? 0,
-      revenue: data.revenue ?? 0,
-      prepay: data.prepay ?? 0,
-    }
+    await dashboardStore.loadCards()
   } finally {
     loading.value = false
   }
 }
 
-async function loadTrend() {
+async function loadRevenue() {
+  revenueLoading.value = true
   try {
-    const res = await request.get('/dashboard/revenue-trend', { params: { range: '7d' } })
-    const points = res.data?.points ?? res.data?.list ?? []
-    if (points.length) {
-      const last = points[points.length - 1]
-      trendTip.value = `近 7 日营收趋势已加载（最近一日 ¥${last.revenue ?? last.amount ?? 0}）。`
-    }
-  } catch {
-    trendTip.value = ''
+    await dashboardStore.loadDailyRevenue(dashboardStore.revenueDate)
+  } finally {
+    revenueLoading.value = false
   }
 }
 
-onMounted(() => {
-  loadSummary()
-  loadTrend()
+watch(
+  () => dashboardStore.revenueDate,
+  () => {
+    loadRevenue()
+  },
+)
+
+onMounted(async () => {
+  dashboardStore.revenueDate = beijingToday()
+  await Promise.all([loadCards(), loadRevenue()])
 })
 
 const cards = computed(() => [
-  { key: 'today', title: '今日订单', value: stats.value.todayCount, sub: '含新建与到店登记', icon: 'Calendar', tone: 'blue' },
-  { key: 'wash', title: '洗护中', value: stats.value.washingCount, sub: '洗护中 + 修复中', icon: 'Brush', tone: 'cyan' },
-  { key: 'pick', title: '待取件', value: stats.value.waitPickupCount, sub: '已完工待客户取包', icon: 'Box', tone: 'amber' },
-  { key: 'done', title: '已完成', value: stats.value.doneCount, sub: '已取件归档', icon: 'CircleCheck', tone: 'green' },
+  {
+    key: 'today',
+    title: '今日订单',
+    value: dashboardStore.stats.todayCount,
+    sub: '含新建与到店登记（北京时间）',
+    icon: 'Calendar',
+    tone: 'blue',
+  },
+  {
+    key: 'wash',
+    title: '洗护中',
+    value: dashboardStore.stats.washingCount,
+    sub: '洗护中 + 修复中',
+    icon: 'Brush',
+    tone: 'cyan',
+  },
+  {
+    key: 'pick',
+    title: '待取件',
+    value: dashboardStore.stats.waitPickupCount,
+    sub: '已完工待客户取包',
+    icon: 'Box',
+    tone: 'amber',
+  },
+  {
+    key: 'done',
+    title: '已完成',
+    value: dashboardStore.stats.doneCount,
+    sub: '已取件归档',
+    icon: 'CircleCheck',
+    tone: 'green',
+  },
 ])
+
+const selectedDateLabel = computed(() => formatDateLabel(dashboardStore.dailyRevenue.date))
 
 function formatMoney(n) {
   return `¥ ${Number(n).toLocaleString('zh-CN', { minimumFractionDigits: 0 })}`
@@ -69,8 +87,8 @@ function formatMoney(n) {
 </script>
 
 <template>
-  <div v-loading="loading" class="dashboard">
-    <el-row :gutter="16" class="stat-row">
+  <div class="dashboard">
+    <el-row v-loading="loading" :gutter="16" class="stat-row">
       <el-col v-for="c in cards" :key="c.key" :xs="24" :sm="12" :lg="6">
         <el-card shadow="hover" class="stat-card" :class="`tone-${c.tone}`">
           <div class="stat-inner">
@@ -89,27 +107,42 @@ function formatMoney(n) {
 
     <el-row :gutter="16" class="rev-row">
       <el-col :xs="24" :lg="16">
-        <el-card shadow="never" class="panel">
+        <el-card v-loading="revenueLoading" shadow="never" class="panel">
           <template #header>
-            <span class="panel-title">营收概览</span>
+            <div class="panel-header">
+              <span class="panel-title">营收概览</span>
+              <el-select
+                v-model="dashboardStore.revenueDate"
+                placeholder="选择日期"
+                style="width: 160px"
+              >
+                <el-option
+                  v-for="opt in dateOptions"
+                  :key="opt.value"
+                  :label="opt.label"
+                  :value="opt.value"
+                />
+              </el-select>
+            </div>
           </template>
           <el-row :gutter="24">
             <el-col :span="12">
               <div class="rev-block">
-                <div class="rev-label">订单金额合计</div>
-                <div class="rev-amount primary">{{ formatMoney(stats.revenue) }}</div>
+                <div class="rev-label">{{ selectedDateLabel }}订单金额合计</div>
+                <div class="rev-amount primary">{{ formatMoney(dashboardStore.dailyRevenue.revenue) }}</div>
               </div>
             </el-col>
             <el-col :span="12">
               <div class="rev-block">
-                <div class="rev-label">预收款合计</div>
-                <div class="rev-amount muted">{{ formatMoney(stats.prepay) }}</div>
+                <div class="rev-label">{{ selectedDateLabel }}预收款合计</div>
+                <div class="rev-amount muted">{{ formatMoney(dashboardStore.dailyRevenue.prepay) }}</div>
               </div>
             </el-col>
           </el-row>
           <el-divider />
           <p class="rev-tip">
-            {{ trendTip || '数据来自后端仪表盘接口，与订单状态实时一致。' }}
+            统计按北京时间（UTC+8），下单日期 {{ dashboardStore.dailyRevenue.date }}，当日共
+            {{ dashboardStore.dailyRevenue.todayCount }} 笔订单。
           </p>
         </el-card>
       </el-col>
@@ -208,10 +241,12 @@ function formatMoney(n) {
   border: 1px solid var(--bw-border);
 }
 
-.panel :deep(.el-card__header) {
+.panel-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  width: 100%;
+  gap: 12px;
 }
 
 .panel-title {

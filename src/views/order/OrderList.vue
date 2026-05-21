@@ -1,6 +1,8 @@
 <script setup>
 import { ref, watch, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { useDashboardStore } from '../../stores/dashboard'
 import { useOrderStore } from '../../stores/order'
 import { getWashServiceLabels, ORDER_STATUS_OPTIONS } from '../../constants/order'
 import OrderStatusTag from '../../components/order/OrderStatusTag.vue'
@@ -8,6 +10,7 @@ import OrderFormDialog from '../../components/order/OrderFormDialog.vue'
 
 const router = useRouter()
 const orderStore = useOrderStore()
+const dashboardStore = useDashboardStore()
 
 const keyword = ref('')
 const statusFilter = ref('')
@@ -54,9 +57,31 @@ function onSearch() {
   loadList()
 }
 
-function onSaved() {
+async function onSaved() {
   page.value = 1
-  loadList()
+  await loadList()
+  await dashboardStore.refreshAll()
+}
+
+async function removeRow(row) {
+  try {
+    await ElMessageBox.confirm(
+      `确定删除订单「${row.orderNo}」吗？删除后不可恢复。`,
+      '删除确认',
+      { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' },
+    )
+  } catch {
+    return
+  }
+  loading.value = true
+  try {
+    await orderStore.remove(row.id)
+    ElMessage.success('订单已删除')
+    await loadList()
+    await dashboardStore.refreshAll()
+  } finally {
+    loading.value = false
+  }
 }
 
 watch([page, pageSize], () => {
@@ -114,10 +139,11 @@ onMounted(() => {
           <OrderStatusTag :status="row.status" />
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="200" fixed="right" align="center">
+      <el-table-column label="操作" width="240" fixed="right" align="center">
         <template #default="{ row }">
           <el-button link type="primary" @click="goDetail(row)">详情</el-button>
           <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
+          <el-button link type="danger" @click="removeRow(row)">删除</el-button>
         </template>
       </el-table-column>
     </el-table>

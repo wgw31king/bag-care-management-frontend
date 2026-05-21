@@ -1,12 +1,14 @@
 <script setup>
 import { ref, watch, computed } from 'vue'
 import { ElMessage } from 'element-plus'
+import { useDashboardStore } from '../../stores/dashboard'
 import { useOrderStore } from '../../stores/order'
 import request from '../../api/request'
 import {
   ORDER_STATUS_OPTIONS,
   WASH_SERVICE_OPTIONS,
 } from '../../constants/order'
+import { addBeijingDays, beijingNowDateTime, beijingToday } from '../../utils/beijing-date'
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false },
@@ -17,6 +19,7 @@ const props = defineProps({
 const emit = defineEmits(['update:modelValue', 'saved'])
 
 const orderStore = useOrderStore()
+const dashboardStore = useDashboardStore()
 const formRef = ref()
 const fileList = ref([])
 const submitting = ref(false)
@@ -97,11 +100,8 @@ watch(
       if (ok) return
     }
     form.value = emptyForm()
-    const now = new Date()
-    const pad = (n) => String(n).padStart(2, '0')
-    form.value.orderTime = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:00`
-    const later = new Date(now.getTime() + 3 * 86400000)
-    form.value.expectPickupTime = `${later.getFullYear()}-${pad(later.getMonth() + 1)}-${pad(later.getDate())} 18:00:00`
+    form.value.orderTime = beijingNowDateTime()
+    form.value.expectPickupTime = `${addBeijingDays(beijingToday(), 3)} 18:00:00`
     fileList.value = []
   },
 )
@@ -159,6 +159,7 @@ async function submit() {
       await orderStore.add(payload)
       ElMessage.success('订单已创建')
     }
+    await dashboardStore.refreshAll()
     emit('saved')
     close()
   } catch {
