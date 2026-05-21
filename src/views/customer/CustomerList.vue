@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, watch, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useCustomerStore } from '../../stores/customer'
 
@@ -9,6 +9,7 @@ const keyword = ref('')
 const tagFilter = ref('')
 const page = ref(1)
 const pageSize = ref(10)
+const loading = ref(false)
 
 const dialogVisible = ref(false)
 const form = ref({
@@ -28,27 +29,23 @@ const tagOptions = [
   { label: '储值', value: '储值' },
 ]
 
-const filtered = computed(() => {
-  let list = [...store.customers]
-  const kw = keyword.value.trim()
-  if (kw) {
-    list = list.filter((c) => c.name.includes(kw) || c.phone.includes(kw) || (c.wechat && c.wechat.includes(kw)))
+async function loadList() {
+  loading.value = true
+  try {
+    await store.fetchList({
+      page: page.value,
+      pageSize: pageSize.value,
+      keyword: keyword.value.trim() || undefined,
+      tag: tagFilter.value || undefined,
+    })
+  } finally {
+    loading.value = false
   }
-  if (tagFilter.value) {
-    list = list.filter((c) => c.tag === tagFilter.value)
-  }
-  return list
-})
-
-const total = computed(() => filtered.value.length)
-
-const paged = computed(() => {
-  const start = (page.value - 1) * pageSize.value
-  return filtered.value.slice(start, start + pageSize.value)
-})
+}
 
 function onSearch() {
   page.value = 1
+  loadList()
 }
 
 function tagType(tag) {
@@ -69,25 +66,44 @@ function openEdit(row) {
   dialogVisible.value = true
 }
 
-function saveCustomer() {
+async function saveCustomer() {
   if (!form.value.name || !form.value.phone) {
     ElMessage.warning('请填写姓名与手机号')
     return
   }
-  if (isEdit.value) {
-    store.update(form.value.id, { ...form.value })
-  } else {
-    store.add({ ...form.value })
+  try {
+    if (isEdit.value) {
+      await store.update(form.value.id, { ...form.value })
+      ElMessage.success('已更新')
+    } else {
+      await store.add({ ...form.value })
+      ElMessage.success('已添加')
+    }
+    dialogVisible.value = false
+    onSearch()
+  } catch {
+    // 错误由拦截器提示
   }
-  dialogVisible.value = false
-  onSearch()
 }
 
 async function removeRow(row) {
   await ElMessageBox.confirm(`确定删除客户「${row.name}」？`, '确认', { type: 'warning' })
-  store.remove(row.id)
-  onSearch()
+  try {
+    await store.remove(row.id)
+    ElMessage.success('已删除')
+    loadList()
+  } catch {
+    // 错误由拦截器提示
+  }
 }
+
+watch([page, pageSize], () => {
+  loadList()
+})
+
+onMounted(() => {
+  loadList()
+})
 </script>
 
 <template>
@@ -117,7 +133,7 @@ async function removeRow(row) {
       </el-button>
     </div>
 
-    <el-table :data="paged" border stripe class="data-table" empty-text="暂无客户">
+    <el-table v-loading="loading" :data="store.customers" border stripe class="data-table" empty-text="暂无客户">
       <el-table-column prop="name" label="客户姓名" width="120" />
       <el-table-column prop="phone" label="联系电话" width="130" />
       <el-table-column prop="wechat" label="微信" min-width="120" show-overflow-tooltip />
@@ -141,7 +157,7 @@ async function removeRow(row) {
       <el-pagination
         v-model:current-page="page"
         v-model:page-size="pageSize"
-        :total="total"
+        :total="store.total"
         :page-sizes="[10, 20, 50]"
         layout="total, sizes, prev, pager, next, jumper"
         background

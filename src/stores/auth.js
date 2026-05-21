@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
+import request from '../api/request'
 
 export const useAuthStore = defineStore('auth', () => {
   const token = ref(localStorage.getItem('bagwash_token') || '')
@@ -7,7 +8,6 @@ export const useAuthStore = defineStore('auth', () => {
 
   const isLoggedIn = computed(() => Boolean(token.value))
 
-  /** 登录成功后由 API 层调用，写入 token 与展示名 */
   function setSession(accessToken, username) {
     token.value = accessToken
     displayName.value = username || '门店管理员'
@@ -15,12 +15,38 @@ export const useAuthStore = defineStore('auth', () => {
     localStorage.setItem('bagwash_user', displayName.value)
   }
 
-  function logout() {
+  function clearSession() {
     token.value = ''
     displayName.value = ''
     localStorage.removeItem('bagwash_token')
     localStorage.removeItem('bagwash_user')
   }
 
-  return { token, displayName, isLoggedIn, setSession, logout }
+  async function login(username, password) {
+    const res = await request.post('/auth/login', { username, password })
+    const data = res.data || {}
+    setSession(data.token, data.displayName || data.username || username)
+    return data
+  }
+
+  async function logout() {
+    try {
+      await request.post('/auth/logout')
+    } catch {
+      // 网络失败时仍清除本地会话
+    }
+    clearSession()
+  }
+
+  async function fetchMe() {
+    const res = await request.get('/auth/me')
+    const data = res.data || {}
+    if (data.displayName || data.username) {
+      displayName.value = data.displayName || data.username
+      localStorage.setItem('bagwash_user', displayName.value)
+    }
+    return data
+  }
+
+  return { token, displayName, isLoggedIn, setSession, clearSession, login, logout, fetchMe }
 })

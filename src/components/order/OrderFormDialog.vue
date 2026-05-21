@@ -2,6 +2,7 @@
 import { ref, watch, computed } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useOrderStore } from '../../stores/order'
+import request from '../../api/request'
 import {
   ORDER_STATUS_OPTIONS,
   WASH_SERVICE_OPTIONS,
@@ -18,6 +19,7 @@ const emit = defineEmits(['update:modelValue', 'saved'])
 const orderStore = useOrderStore()
 const formRef = ref()
 const fileList = ref([])
+const submitting = ref(false)
 
 const emptyForm = () => ({
   customerName: '',
@@ -58,37 +60,41 @@ const rules = {
   status: [{ required: true, message: '请选择订单状态', trigger: 'change' }],
 }
 
+async function fillFormFromOrder(id) {
+  const row = orderStore.getById(id) || (await orderStore.fetchOne(id))
+  if (!row) return false
+  form.value = {
+    customerName: row.customerName,
+    phone: row.phone,
+    wechatNote: row.wechatNote ?? '',
+    brand: row.brand,
+    style: row.style,
+    color: row.color,
+    material: row.material,
+    defectDesc: row.defectDesc,
+    defectImages: [...(row.defectImages || [])],
+    washServices: [...(row.washServices || [])],
+    orderTime: row.orderTime,
+    expectPickupTime: row.expectPickupTime,
+    amount: row.amount,
+    prepay: row.prepay,
+    remark: row.remark ?? '',
+    status: row.status,
+  }
+  fileList.value = (row.defectImages || []).map((url, i) => ({
+    name: `瑕疵图${i + 1}`,
+    url,
+  }))
+  return true
+}
+
 watch(
   () => props.modelValue,
-  (open) => {
+  async (open) => {
     if (!open) return
     if (props.mode === 'edit' && props.orderId) {
-      const row = orderStore.getById(props.orderId)
-      if (row) {
-        form.value = {
-          customerName: row.customerName,
-          phone: row.phone,
-          wechatNote: row.wechatNote ?? '',
-          brand: row.brand,
-          style: row.style,
-          color: row.color,
-          material: row.material,
-          defectDesc: row.defectDesc,
-          defectImages: [...(row.defectImages || [])],
-          washServices: [...(row.washServices || [])],
-          orderTime: row.orderTime,
-          expectPickupTime: row.expectPickupTime,
-          amount: row.amount,
-          prepay: row.prepay,
-          remark: row.remark ?? '',
-          status: row.status,
-        }
-        fileList.value = (row.defectImages || []).map((url, i) => ({
-          name: `瑕疵图${i + 1}`,
-          url,
-        }))
-        return
-      }
+      const ok = await fillFormFromOrder(props.orderId)
+      if (ok) return
     }
     form.value = emptyForm()
     const now = new Date()
@@ -101,25 +107,30 @@ watch(
 )
 
 function syncImagesFromFileList() {
-  form.value.defectImages = fileList.value.map((f) => f.url).filter(Boolean)
+  form.value.defectImages = fileList.value.map((f) => f.url).filter((url) => url && !url.startsWith('data:'))
 }
 
-function handleRequest(options) {
-  const raw = options.file
-  const reader = new FileReader()
-  reader.onload = (e) => {
-    const url = e.target?.result
+async function handleRequest(options) {
+  const formData = new FormData()
+  formData.append('file', options.file)
+  try {
+    const res = await request.post('/upload/images', formData)
+    const data = res.data || {}
+    const urls = data.urls ?? (data.url ? [data.url] : [])
+    const url = urls[0]
+    if (!url) {
+      options.onError?.(new Error('upload empty'))
+      return
+    }
     fileList.value.push({
-      name: raw.name,
+      name: options.file.name,
       url,
     })
     syncImagesFromFileList()
-    options.onSuccess?.({}, raw)
+    options.onSuccess?.(data, options.file)
+  } catch (err) {
+    options.onError?.(err)
   }
-  reader.onerror = () => {
-    options.onError?.(new Error('read fail'))
-  }
-  reader.readAsDataURL(raw)
 }
 
 function handleRemove() {
@@ -127,7 +138,6 @@ function handleRemove() {
 }
 
 function handlePreview(file) {
-  // Element Plus 默认预览；保留钩子便于扩展
   if (file.url) window.open(file.url, '_blank')
 }
 
@@ -140,15 +150,22 @@ async function submit() {
   if (!valid) return
   syncImagesFromFileList()
   const payload = { ...form.value }
-  if (props.mode === 'edit' && props.orderId) {
-    orderStore.update(props.orderId, payload)
-    ElMessage.success('订单已更新')
-  } else {
-    orderStore.add(payload)
-    ElMessage.success('订单已创建')
+  submitting.value = true
+  try {
+    if (props.mode === 'edit' && props.orderId) {
+      await orderStore.update(props.orderId, payload)
+      ElMessage.success('订单已更新')
+    } else {
+      await orderStore.add(payload)
+      ElMessage.success('订单已创建')
+    }
+    emit('saved')
+    close()
+  } catch {
+    // 错误由拦截器提示
+  } finally {
+    submitting.value = false
   }
-  emit('saved')
-  close()
 }
 </script>
 
@@ -223,7 +240,7 @@ async function submit() {
           >
             <el-icon><Plus /></el-icon>
           </el-upload>
-          <p class="upload-tip">支持多图，本地预览（不上传服务器）。可点击缩略图预览、删除。</p>
+          <p class="upload-tip">支持多图，上传后保存为服务器 URL（非 base64）。</p>
         </el-form-item>
 
         <div class="section-title">洗护与时间</div>
@@ -286,7 +303,7 @@ async function submit() {
     </el-scrollbar>
     <template #footer>
       <el-button @click="close">取消</el-button>
-      <el-button type="primary" @click="submit">保存</el-button>
+      <el-button type="primary" :loading="submitting" @click="submit">保存</el-button>
     </template>
   </el-dialog>
 </template>

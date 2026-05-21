@@ -1,6 +1,12 @@
 <script setup>
 import { ref } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
+import { useAuthStore } from '../stores/auth'
+
+const router = useRouter()
+const route = useRoute()
+const auth = useAuthStore()
 
 const form = ref({
   username: '',
@@ -9,15 +15,22 @@ const form = ref({
 
 const loading = ref(false)
 
-function onSubmit() {
+async function onSubmit() {
   if (!form.value.username || !form.value.password) {
     ElMessage.warning('请输入账号和密码')
     return
   }
   loading.value = true
-  // TODO: 调用后端 POST /api/auth/login，成功后 auth.setSession(token, username)
-  loading.value = false
-  ElMessage.info('请接入后端登录接口后再试')
+  try {
+    await auth.login(form.value.username, form.value.password)
+    ElMessage.success('登录成功')
+    const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : '/dashboard'
+    router.push(redirect)
+  } catch {
+    // 错误信息由 request 拦截器统一提示
+  } finally {
+    loading.value = false
+  }
 }
 </script>
 

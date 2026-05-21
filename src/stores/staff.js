@@ -1,5 +1,11 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
+import request from '../api/request'
+
+function pickList(data) {
+  if (Array.isArray(data)) return data
+  return data?.list ?? data?.items ?? data?.records ?? []
+}
 
 export const PERMISSION_OPTIONS = [
   { value: 'dashboard', label: '仪表盘' },
@@ -12,27 +18,41 @@ export const PERMISSION_OPTIONS = [
 
 export const useStaffStore = defineStore('staff', () => {
   const staffList = ref([])
+  const total = ref(0)
 
-  function add(row) {
-    staffList.value.unshift({
-      ...row,
-      id: `st_${Date.now()}`,
-    })
+  async function fetchList(params = {}) {
+    const res = await request.get('/staff', { params })
+    const data = res.data || {}
+    staffList.value = pickList(data)
+    total.value = data.total ?? staffList.value.length
+    return { list: staffList.value, total: total.value }
   }
 
-  function update(id, payload) {
+  async function add(row) {
+    const res = await request.post('/staff', row)
+    const created = res.data
+    if (created) staffList.value.unshift(created)
+    return created
+  }
+
+  async function update(id, payload) {
+    const res = await request.put(`/staff/${id}`, payload)
+    const updated = res.data
     const idx = staffList.value.findIndex((s) => s.id === id)
-    if (idx === -1) return
-    staffList.value[idx] = { ...staffList.value[idx], ...payload }
+    if (idx >= 0 && updated) staffList.value[idx] = updated
+    else if (idx >= 0) staffList.value[idx] = { ...staffList.value[idx], ...payload }
+    return updated ?? staffList.value[idx]
   }
 
-  function remove(id) {
+  async function remove(id) {
+    await request.delete(`/staff/${id}`)
     staffList.value = staffList.value.filter((s) => s.id !== id)
+    total.value = Math.max(0, total.value - 1)
   }
 
   function setStaffList(list) {
     staffList.value = Array.isArray(list) ? list : []
   }
 
-  return { staffList, add, update, remove, setStaffList }
+  return { staffList, total, fetchList, add, update, remove, setStaffList }
 })

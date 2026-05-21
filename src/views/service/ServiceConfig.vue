@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, watch, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useServiceStore } from '../../stores/service'
 
@@ -9,10 +9,12 @@ const keyword = ref('')
 const enabledFilter = ref('')
 const page = ref(1)
 const pageSize = ref(10)
+const loading = ref(false)
 
 const dialogVisible = ref(false)
 const form = ref({
   id: '',
+  code: '',
   name: '',
   price: 0,
   durationMin: 60,
@@ -20,37 +22,34 @@ const form = ref({
   sort: 1,
 })
 
-const filtered = computed(() => {
-  let list = [...store.services]
-  if (keyword.value.trim()) {
-    const kw = keyword.value.trim()
-    list = list.filter((s) => s.name.includes(kw))
+async function loadList() {
+  loading.value = true
+  try {
+    await store.fetchList({
+      page: page.value,
+      pageSize: pageSize.value,
+      keyword: keyword.value.trim() || undefined,
+      enabled: enabledFilter.value === '' ? undefined : enabledFilter.value,
+    })
+  } finally {
+    loading.value = false
   }
-  if (enabledFilter.value === '1') list = list.filter((s) => s.enabled)
-  if (enabledFilter.value === '0') list = list.filter((s) => !s.enabled)
-  list.sort((a, b) => a.sort - b.sort)
-  return list
-})
-
-const total = computed(() => filtered.value.length)
-
-const paged = computed(() => {
-  const start = (page.value - 1) * pageSize.value
-  return filtered.value.slice(start, start + pageSize.value)
-})
+}
 
 function onSearch() {
   page.value = 1
+  loadList()
 }
 
 function openAdd() {
   form.value = {
     id: '',
+    code: '',
     name: '',
     price: 199,
     durationMin: 120,
     enabled: true,
-    sort: store.services.length + 1,
+    sort: (store.services.length || 0) + 1,
   }
   dialogVisible.value = true
 }
@@ -60,23 +59,39 @@ function openEdit(row) {
   dialogVisible.value = true
 }
 
-function save() {
+async function save() {
   if (!form.value.name) {
     ElMessage.warning('请填写项目名称')
     return
   }
-  store.save({ ...form.value })
-  ElMessage.success('已保存')
-  dialogVisible.value = false
-  onSearch()
+  try {
+    await store.save({ ...form.value })
+    ElMessage.success('已保存')
+    dialogVisible.value = false
+    onSearch()
+  } catch {
+    // 错误由拦截器提示
+  }
 }
 
 async function removeRow(row) {
   await ElMessageBox.confirm(`删除项目「${row.name}」？`, '确认', { type: 'warning' })
-  store.remove(row.id)
-  ElMessage.success('已删除')
-  onSearch()
+  try {
+    await store.remove(row.id)
+    ElMessage.success('已删除')
+    loadList()
+  } catch {
+    // 错误由拦截器提示
+  }
 }
+
+watch([page, pageSize], () => {
+  loadList()
+})
+
+onMounted(() => {
+  loadList()
+})
 </script>
 
 <template>
@@ -107,8 +122,9 @@ async function removeRow(row) {
       </el-button>
     </div>
 
-    <el-table :data="paged" border stripe class="data-table" empty-text="暂无服务项目">
+    <el-table v-loading="loading" :data="store.services" border stripe class="data-table" empty-text="暂无服务项目">
       <el-table-column prop="sort" label="排序" width="80" align="center" />
+      <el-table-column prop="code" label="编码" width="120" show-overflow-tooltip />
       <el-table-column prop="name" label="项目名称" min-width="140" />
       <el-table-column prop="price" label="标价（元）" width="120" align="right">
         <template #default="{ row }">¥ {{ row.price }}</template>
@@ -131,7 +147,7 @@ async function removeRow(row) {
       <el-pagination
         v-model:current-page="page"
         v-model:page-size="pageSize"
-        :total="total"
+        :total="store.total"
         :page-sizes="[10, 20, 50]"
         layout="total, sizes, prev, pager, next, jumper"
         background
@@ -140,6 +156,9 @@ async function removeRow(row) {
 
     <el-dialog v-model="dialogVisible" :title="form.id ? '编辑服务' : '新增服务'" width="520px" destroy-on-close>
       <el-form :model="form" label-width="120px">
+        <el-form-item label="项目编码">
+          <el-input v-model="form.code" placeholder="如：fine_wash" />
+        </el-form-item>
         <el-form-item label="项目名称" required>
           <el-input v-model="form.name" placeholder="如：精洗" />
         </el-form-item>

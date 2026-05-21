@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, watch, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useOrderStore } from '../../stores/order'
 import { getWashServiceLabels, ORDER_STATUS_OPTIONS } from '../../constants/order'
@@ -13,36 +13,25 @@ const keyword = ref('')
 const statusFilter = ref('')
 const page = ref(1)
 const pageSize = ref(10)
+const loading = ref(false)
 
 const dialogVisible = ref(false)
 const dialogMode = ref('add')
 const editingId = ref('')
 
-const filtered = computed(() => {
-  let list = [...orderStore.orders]
-  const kw = keyword.value.trim()
-  if (kw) {
-    list = list.filter(
-      (o) =>
-        o.orderNo.includes(kw) ||
-        o.customerName.includes(kw) ||
-        o.phone.includes(kw) ||
-        o.brand.includes(kw),
-    )
+async function loadList() {
+  loading.value = true
+  try {
+    await orderStore.fetchList({
+      page: page.value,
+      pageSize: pageSize.value,
+      keyword: keyword.value.trim() || undefined,
+      status: statusFilter.value || undefined,
+    })
+  } finally {
+    loading.value = false
   }
-  if (statusFilter.value) {
-    list = list.filter((o) => o.status === statusFilter.value)
-  }
-  list.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))
-  return list
-})
-
-const total = computed(() => filtered.value.length)
-
-const paged = computed(() => {
-  const start = (page.value - 1) * pageSize.value
-  return filtered.value.slice(start, start + pageSize.value)
-})
+}
 
 function openAdd() {
   dialogMode.value = 'add'
@@ -62,11 +51,21 @@ function goDetail(row) {
 
 function onSearch() {
   page.value = 1
+  loadList()
 }
 
 function onSaved() {
   page.value = 1
+  loadList()
 }
+
+watch([page, pageSize], () => {
+  loadList()
+})
+
+onMounted(() => {
+  loadList()
+})
 </script>
 
 <template>
@@ -96,7 +95,7 @@ function onSaved() {
       </el-button>
     </div>
 
-    <el-table :data="paged" border stripe class="data-table" empty-text="暂无订单">
+    <el-table v-loading="loading" :data="orderStore.orders" border stripe class="data-table" empty-text="暂无订单">
       <el-table-column prop="orderNo" label="订单号" min-width="130" fixed />
       <el-table-column prop="customerName" label="客户" width="100" />
       <el-table-column prop="phone" label="联系电话" width="120" />
@@ -127,7 +126,7 @@ function onSaved() {
       <el-pagination
         v-model:current-page="page"
         v-model:page-size="pageSize"
-        :total="total"
+        :total="orderStore.total"
         :page-sizes="[10, 20, 50]"
         layout="total, sizes, prev, pager, next, jumper"
         background

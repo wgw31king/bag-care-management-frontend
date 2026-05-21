@@ -1,27 +1,59 @@
 <script setup>
-import { computed } from 'vue'
-import { useOrderStore } from '../stores/order'
-import { ORDER_STATUS } from '../constants/order'
+import { ref, computed, onMounted } from 'vue'
+import request from '../api/request'
 
-const orderStore = useOrderStore()
+const loading = ref(false)
+const stats = ref({
+  todayCount: 0,
+  washingCount: 0,
+  waitPickupCount: 0,
+  doneCount: 0,
+  revenue: 0,
+  prepay: 0,
+})
 
-const stats = computed(() => {
-  const list = orderStore.orders
-  const today = new Date().toISOString().slice(0, 10)
-  const todayOrders = list.filter((o) => String(o.orderTime).startsWith(today))
-  const washing = list.filter((o) => o.status === ORDER_STATUS.WASHING || o.status === ORDER_STATUS.REPAIRING)
-  const waitPickup = list.filter((o) => o.status === ORDER_STATUS.WAIT_PICKUP)
-  const done = list.filter((o) => o.status === ORDER_STATUS.PICKED_UP)
-  const revenue = list.reduce((s, o) => s + (Number(o.amount) || 0), 0)
-  const prepay = list.reduce((s, o) => s + (Number(o.prepay) || 0), 0)
-  return {
-    todayCount: todayOrders.length,
-    washingCount: washing.length,
-    waitPickupCount: waitPickup.length,
-    doneCount: done.length,
-    revenue,
-    prepay,
+const trendTip = ref('')
+
+function todayParam() {
+  return new Date().toISOString().slice(0, 10)
+}
+
+async function loadSummary() {
+  loading.value = true
+  try {
+    const res = await request.get('/dashboard/summary', {
+      params: { date: todayParam() },
+    })
+    const data = res.data || {}
+    stats.value = {
+      todayCount: data.todayCount ?? 0,
+      washingCount: data.washingCount ?? 0,
+      waitPickupCount: data.waitPickupCount ?? 0,
+      doneCount: data.doneCount ?? 0,
+      revenue: data.revenue ?? 0,
+      prepay: data.prepay ?? 0,
+    }
+  } finally {
+    loading.value = false
   }
+}
+
+async function loadTrend() {
+  try {
+    const res = await request.get('/dashboard/revenue-trend', { params: { range: '7d' } })
+    const points = res.data?.points ?? res.data?.list ?? []
+    if (points.length) {
+      const last = points[points.length - 1]
+      trendTip.value = `近 7 日营收趋势已加载（最近一日 ¥${last.revenue ?? last.amount ?? 0}）。`
+    }
+  } catch {
+    trendTip.value = ''
+  }
+}
+
+onMounted(() => {
+  loadSummary()
+  loadTrend()
 })
 
 const cards = computed(() => [
@@ -37,7 +69,7 @@ function formatMoney(n) {
 </script>
 
 <template>
-  <div class="dashboard">
+  <div v-loading="loading" class="dashboard">
     <el-row :gutter="16" class="stat-row">
       <el-col v-for="c in cards" :key="c.key" :xs="24" :sm="12" :lg="6">
         <el-card shadow="hover" class="stat-card" :class="`tone-${c.tone}`">
@@ -77,7 +109,7 @@ function formatMoney(n) {
           </el-row>
           <el-divider />
           <p class="rev-tip">
-            接入后端后，可在此展示按日/周/月的趋势图、渠道占比、客单价等指标。
+            {{ trendTip || '数据来自后端仪表盘接口，与订单状态实时一致。' }}
           </p>
         </el-card>
       </el-col>
