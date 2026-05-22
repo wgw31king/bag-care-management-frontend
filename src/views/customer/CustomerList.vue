@@ -66,17 +66,23 @@ function openEdit(row) {
   dialogVisible.value = true
 }
 
+function buildCustomerPayload() {
+  const { name, phone, wechat, tag, remark } = form.value
+  return { name, phone, wechat, tag, remark }
+}
+
 async function saveCustomer() {
   if (!form.value.name || !form.value.phone) {
     ElMessage.warning('请填写姓名与手机号')
     return
   }
+  const payload = buildCustomerPayload()
   try {
     if (isEdit.value) {
-      await store.update(form.value.id, { ...form.value })
+      await store.update(form.value.id, payload)
       ElMessage.success('已更新')
     } else {
-      await store.add({ ...form.value })
+      await store.add(payload)
       ElMessage.success('已添加')
     }
     dialogVisible.value = false

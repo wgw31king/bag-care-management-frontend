@@ -5,6 +5,7 @@ import { useOrderStore } from '../../stores/order'
 import { getWashServiceLabels, getStatusLabel } from '../../constants/order'
 import OrderStatusTag from '../../components/order/OrderStatusTag.vue'
 import OrderFormDialog from '../../components/order/OrderFormDialog.vue'
+import { resolveUploadUrl } from '../../utils/upload-url'
 
 const route = useRoute()
 const router = useRouter()
@@ -15,6 +16,10 @@ const order = ref(null)
 const loading = ref(false)
 
 const dialogVisible = ref(false)
+
+const defectImageUrls = computed(() =>
+  (order.value?.defectImages || []).map((url) => resolveUploadUrl(url)),
+)
 
 async function loadOrder() {
   loading.value = true
@@ -89,12 +94,12 @@ function onSaved() {
           <el-card shadow="never" class="block">
             <template #header><span class="block-title">瑕疵与图片</span></template>
             <p class="defect-text">{{ order.defectDesc }}</p>
-            <div v-if="order.defectImages?.length" class="img-row">
+            <div v-if="defectImageUrls.length" class="img-row">
               <el-image
-                v-for="(src, i) in order.defectImages"
+                v-for="(src, i) in defectImageUrls"
                 :key="i"
                 :src="src"
-                :preview-src-list="order.defectImages"
+                :preview-src-list="defectImageUrls"
                 :initial-index="i"
                 fit="cover"
                 class="thumb"

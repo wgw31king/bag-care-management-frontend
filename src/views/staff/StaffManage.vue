@@ -1,9 +1,11 @@
 <script setup>
 import { ref, watch, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { useAuthStore } from '../../stores/auth'
 import { useStaffStore, PERMISSION_OPTIONS } from '../../stores/staff'
 
 const store = useStaffStore()
+const auth = useAuthStore()
 
 const keyword = ref('')
 const statusFilter = ref('')
@@ -13,6 +15,10 @@ const loading = ref(false)
 const forbidden = ref(false)
 
 const dialogVisible = ref(false)
+/** 编辑时若打开弹窗时已有登录账号，则禁止改账号（仅可改密码） */
+const usernameLocked = ref(false)
+/** 打开编辑弹窗时的登录账号，用于判断管理员是否只改资料 */
+const originalUsername = ref('')
 const form = ref({
   id: '',
   name: '',
@@ -20,6 +26,8 @@ const form = ref({
   role: '',
   status: '在职',
   permissions: [],
+  username: '',
+  password: '',
 })
 
 async function loadList() {
@@ -51,6 +59,8 @@ function permLabel(value) {
 }
 
 function openAdd() {
+  usernameLocked.value = false
+  originalUsername.value = ''
   form.value = {
     id: '',
     name: '',
@@ -58,20 +68,60 @@ function openAdd() {
     role: '店员',
     status: '在职',
     permissions: ['dashboard', 'order'],
+    username: '',
+    password: '',
   }
   dialogVisible.value = true
 }
 
+const ASSIGNABLE = PERMISSION_OPTIONS.map((o) => o.value)
+
+function normalizePermissions(list) {
+  return (list || []).filter((p) => ASSIGNABLE.includes(p))
+}
+
 function openEdit(row) {
+  originalUsername.value = row.username || ''
+  usernameLocked.value = !auth.isManager && Boolean(row.username)
   form.value = {
     id: row.id,
     name: row.name,
     phone: row.phone,
     role: row.role,
     status: row.status,
-    permissions: [...(row.permissions || [])],
+    permissions: normalizePermissions(row.permissions),
+    username: row.username || '',
+    password: '',
   }
   dialogVisible.value = true
+}
+
+function buildStaffPayload() {
+  const { name, phone, role, status, permissions, username, password } = form.value
+  const payload = { name, phone, role, status, permissions }
+  const u = username?.trim()
+
+  // 新建：必须带账号+密码（与表单校验一致）
+  if (!form.value.id) {
+    payload.username = u
+    payload.password = password
+    return payload
+  }
+
+  // 编辑：管理员可只改资料 / 只改账号 / 只改密码
+  if (auth.isManager) {
+    if (password) {
+      payload.password = password
+      if (u) payload.username = u
+    } else if (u && u !== originalUsername.value) {
+      payload.username = u
+    }
+    return payload
+  }
+
+  if (u) payload.username = u
+  if (password) payload.password = password
+  return payload
 }
 
 async function save() {
@@ -83,12 +133,45 @@ async function save() {
     ElMessage.warning('请至少勾选一个权限')
     return
   }
+  if (!form.value.id) {
+    if (!form.value.username?.trim() || !form.value.password) {
+      ElMessage.warning('新建员工须同时填写登录账号与初始密码')
+      return
+    }
+    if (form.value.password.length < 6) {
+      ElMessage.warning('初始密码至少 6 位')
+      return
+    }
+  } else if (form.value.password && form.value.password.length < 6) {
+    ElMessage.warning('密码至少 6 位')
+    return
+  } else if (auth.isManager && form.value.id && !originalUsername.value) {
+    const u = form.value.username?.trim()
+    if (u && !form.value.password) {
+      ElMessage.warning('首次开通登录须同时填写账号与密码')
+      return
+    }
+    if (!u && form.value.password) {
+      ElMessage.warning('开通登录时须填写账号')
+      return
+    }
+  } else if (
+    !auth.isManager &&
+    form.value.id &&
+    !usernameLocked.value &&
+    form.value.username?.trim() &&
+    !form.value.password
+  ) {
+    ElMessage.warning('补建登录账号时，账号与密码须同时填写')
+    return
+  }
+  const payload = buildStaffPayload()
   try {
     if (form.value.id) {
-      await store.update(form.value.id, { ...form.value })
+      await store.update(form.value.id, payload)
       ElMessage.success('已更新')
     } else {
-      await store.add({ ...form.value })
+      await store.add(payload)
       ElMessage.success('已添加')
     }
     dialogVisible.value = false
@@ -120,7 +203,14 @@ onMounted(() => {
 
 <template>
   <div class="page-card">
-    <el-result v-if="forbidden" icon="warning" title="无访问权限" sub-title="当前账号未分配员工管理权限（403）" />
+    <el-result
+      v-if="!auth.isManager"
+      icon="warning"
+      title="无访问权限"
+      sub-title="仅门店管理员（admin 或岗位「店长」）可管理员工"
+    />
+
+    <el-result v-else-if="forbidden" icon="warning" title="无访问权限" sub-title="请求被拒绝（403）" />
 
     <template v-else>
       <div class="toolbar">
@@ -152,6 +242,12 @@ onMounted(() => {
       <el-table v-loading="loading" :data="store.staffList" border stripe class="data-table" empty-text="暂无员工">
         <el-table-column prop="name" label="姓名" width="120" />
         <el-table-column prop="phone" label="手机号" width="130" />
+        <el-table-column prop="username" label="登录账号" width="120">
+          <template #default="{ row }">
+            <span v-if="row.username">{{ row.username }}</span>
+            <el-tag v-else type="info" size="small" effect="plain">未开通</el-tag>
+          </template>
+        </el-table-column>
         <el-table-column prop="role" label="岗位" width="120" />
         <el-table-column label="权限" min-width="220">
           <template #default="{ row }">
@@ -208,6 +304,33 @@ onMounted(() => {
               </el-checkbox>
             </el-checkbox-group>
           </el-form-item>
+          <div class="section-hint">
+            <template v-if="!form.id">新建须同时填写登录账号与初始密码（至少 6 位）。</template>
+            <template v-else>已创建后，管理员可单独改资料、账号或密码，密码留空表示不修改。</template>
+          </div>
+          <el-form-item label="登录账号" :required="!form.id">
+            <el-input
+              v-model="form.username"
+              :disabled="usernameLocked"
+              placeholder="如 zhang01，勿用 admin"
+              clearable
+            />
+          </el-form-item>
+          <el-form-item :label="form.id ? '新密码' : '初始密码'" :required="!form.id">
+            <el-input
+              v-model="form.password"
+              type="password"
+              show-password
+              :placeholder="
+                form.id
+                  ? auth.isManager
+                    ? '留空不改；可单独改账号或密码'
+                    : '留空不改；补建账号须与账号同时填写'
+                  : '至少 6 位'
+              "
+              clearable
+            />
+          </el-form-item>
         </el-form>
         <template #footer>
           <el-button @click="dialogVisible = false">取消</el-button>
@@ -262,5 +385,11 @@ onMounted(() => {
 
 .mr {
   margin-right: 4px;
+}
+
+.section-hint {
+  font-size: 13px;
+  color: #78909c;
+  margin: 8px 0 12px 100px;
 }
 </style>

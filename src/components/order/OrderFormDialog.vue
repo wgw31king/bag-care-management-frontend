@@ -9,6 +9,7 @@ import {
   WASH_SERVICE_OPTIONS,
 } from '../../constants/order'
 import { addBeijingDays, beijingNowDateTime, beijingToday } from '../../utils/beijing-date'
+import { resolveUploadUrl, toStoredUploadUrl } from '../../utils/upload-url'
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false },
@@ -85,8 +86,10 @@ async function fillFormFromOrder(id) {
     status: row.status,
   }
   fileList.value = (row.defectImages || []).map((url, i) => ({
+    uid: `saved-${i}-${url}`,
     name: `瑕疵图${i + 1}`,
-    url,
+    url: resolveUploadUrl(url),
+    status: 'success',
   }))
   return true
 }
@@ -107,7 +110,9 @@ watch(
 )
 
 function syncImagesFromFileList() {
-  form.value.defectImages = fileList.value.map((f) => f.url).filter((url) => url && !url.startsWith('data:'))
+  form.value.defectImages = fileList.value
+    .map((f) => toStoredUploadUrl(f.url))
+    .filter((url) => url && !url.startsWith('data:'))
 }
 
 async function handleRequest(options) {
@@ -117,18 +122,24 @@ async function handleRequest(options) {
     const res = await request.post('/upload/images', formData)
     const data = res.data || {}
     const urls = data.urls ?? (data.url ? [data.url] : [])
-    const url = urls[0]
-    if (!url) {
+    const stored = urls[0]
+    if (!stored) {
       options.onError?.(new Error('upload empty'))
       return
     }
-    fileList.value.push({
-      name: options.file.name,
-      url,
-    })
+    // el-upload 选图后已自动加入 fileList，勿再 push，否则一张图会出现两条
+    const target = fileList.value.find(
+      (f) => f.uid === options.file.uid || f.name === options.file.name,
+    )
+    if (target) {
+      target.url = resolveUploadUrl(stored)
+      target.status = 'success'
+    }
     syncImagesFromFileList()
-    options.onSuccess?.(data, options.file)
+    options.onSuccess?.({ url: stored }, options.file)
   } catch (err) {
+    const idx = fileList.value.findIndex((f) => f.uid === options.file.uid)
+    if (idx >= 0) fileList.value.splice(idx, 1)
     options.onError?.(err)
   }
 }
@@ -238,6 +249,7 @@ async function submit() {
             :on-preview="handlePreview"
             accept="image/*"
             multiple
+            :limit="9"
           >
             <el-icon><Plus /></el-icon>
           </el-upload>

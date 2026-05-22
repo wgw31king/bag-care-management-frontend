@@ -1,13 +1,31 @@
 <script setup>
-import { computed } from 'vue'
+import { computed, ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
+import SwitchUserDialog from '../components/layout/SwitchUserDialog.vue'
 
 const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
 
+const switchVisible = ref(false)
+
 const active = computed(() => route.path)
+
+const menuItems = [
+  { path: '/dashboard', label: '数据仪表盘', icon: 'Odometer', permission: 'dashboard' },
+  { path: '/orders', label: '订单管理', icon: 'Tickets', permission: 'order' },
+  { path: '/customers', label: '客户管理', icon: 'User', permission: 'customer' },
+  { path: '/services', label: '洗护服务配置', icon: 'Setting', permission: 'service' },
+]
+
+const visibleMenus = computed(() => {
+  const list = menuItems.filter((m) => auth.hasPermission(m.permission))
+  if (auth.isManager) {
+    list.push({ path: '/staff', label: '员工权限', icon: 'Lock', permission: 'staff' })
+  }
+  return list
+})
 
 function go(path) {
   router.push(path)
@@ -17,6 +35,12 @@ async function handleLogout() {
   await auth.logout()
   router.push('/login')
 }
+
+onMounted(() => {
+  if (auth.isLoggedIn) {
+    auth.fetchMe().catch(() => {})
+  }
+})
 </script>
 
 <template>
@@ -37,25 +61,14 @@ async function handleLogout() {
         active-text-color="#ffffff"
         router
       >
-        <el-menu-item index="/dashboard" @click="go('/dashboard')">
-          <el-icon><Odometer /></el-icon>
-          <span>数据仪表盘</span>
-        </el-menu-item>
-        <el-menu-item index="/orders" @click="go('/orders')">
-          <el-icon><Tickets /></el-icon>
-          <span>订单管理</span>
-        </el-menu-item>
-        <el-menu-item index="/customers" @click="go('/customers')">
-          <el-icon><User /></el-icon>
-          <span>客户管理</span>
-        </el-menu-item>
-        <el-menu-item index="/services" @click="go('/services')">
-          <el-icon><Setting /></el-icon>
-          <span>洗护服务配置</span>
-        </el-menu-item>
-        <el-menu-item index="/staff" @click="go('/staff')">
-          <el-icon><Lock /></el-icon>
-          <span>员工权限</span>
+        <el-menu-item
+          v-for="item in visibleMenus"
+          :key="item.path"
+          :index="item.path"
+          @click="go(item.path)"
+        >
+          <el-icon><component :is="item.icon" /></el-icon>
+          <span>{{ item.label }}</span>
         </el-menu-item>
       </el-menu>
     </el-aside>
@@ -73,7 +86,7 @@ async function handleLogout() {
             </span>
             <template #dropdown>
               <el-dropdown-menu>
-                <el-dropdown-item disabled>个人设置（预留）</el-dropdown-item>
+                <el-dropdown-item @click="switchVisible = true">切换用户</el-dropdown-item>
                 <el-dropdown-item divided @click="handleLogout">退出登录</el-dropdown-item>
               </el-dropdown-menu>
             </template>
@@ -90,6 +103,8 @@ async function handleLogout() {
         </div>
       </el-main>
     </el-container>
+
+    <SwitchUserDialog v-model="switchVisible" />
   </el-container>
 </template>
 
@@ -175,10 +190,6 @@ async function handleLogout() {
   display: flex;
   align-items: center;
   gap: 16px;
-}
-
-.env-tag {
-  border-radius: 6px;
 }
 
 .user-trigger {

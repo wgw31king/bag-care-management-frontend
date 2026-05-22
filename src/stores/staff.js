@@ -7,13 +7,12 @@ function pickList(data) {
   return data?.list ?? data?.items ?? data?.records ?? []
 }
 
+/** 可分配给普通员工的模块（员工管理仅门店管理员，无「财务查看」） */
 export const PERMISSION_OPTIONS = [
   { value: 'dashboard', label: '仪表盘' },
   { value: 'order', label: '订单管理' },
   { value: 'customer', label: '客户管理' },
   { value: 'service', label: '服务配置' },
-  { value: 'staff', label: '员工权限' },
-  { value: 'finance', label: '财务查看' },
 ]
 
 export const useStaffStore = defineStore('staff', () => {

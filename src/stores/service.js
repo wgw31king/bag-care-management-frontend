@@ -19,16 +19,22 @@ export const useServiceStore = defineStore('service', () => {
     return { list: services.value, total: total.value }
   }
 
+  function buildPayload(row) {
+    const { code, name, price, durationMin, enabled, sort } = row
+    return { code, name, price, durationMin, enabled, sort }
+  }
+
   async function save(row) {
+    const payload = buildPayload(row)
     let saved
     if (row.id) {
-      const res = await request.put(`/services/${row.id}`, row)
+      const res = await request.put(`/services/${row.id}`, payload)
       saved = res.data
       const idx = services.value.findIndex((s) => s.id === row.id)
       if (idx >= 0 && saved) services.value[idx] = saved
-      else if (idx >= 0) services.value[idx] = { ...row }
+      else if (idx >= 0) services.value[idx] = { ...services.value[idx], ...payload }
     } else {
-      const res = await request.post('/services', row)
+      const res = await request.post('/services', payload)
       saved = res.data
       if (saved) services.value.push(saved)
     }
